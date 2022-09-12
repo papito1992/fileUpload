@@ -1,5 +1,6 @@
 package com.dokobit.fileupload;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -15,13 +16,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-public class FileUploadTests {
+public class FileUploadControllerAcceptanceTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Test
+    void handleFileUpload() throws Exception {
+        final MvcResult result = this.mockMvc.perform(multipart("/upload"))
+                .andExpect(status().isBadRequest())
+                .andReturn();
+        Assertions.assertEquals("Required request part 'files' is not present", result.getResponse().getErrorMessage());
+    }
 
     @Test
     public void shouldUploadFileAndGetSuccessfulResponseAndArchivedFile() throws Exception {
@@ -37,7 +45,6 @@ public class FileUploadTests {
                 .andReturn();
 
         assertEquals("application/zip", result.getResponse().getContentType());
-        assertEquals(21, result.getResponse().getContentLength());
         assertTrue(Objects.requireNonNull(
                 result.getResponse().getHeader("Content-Disposition")).contains("filename=testtest1.zip"));
     }

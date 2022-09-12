@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,18 +20,10 @@ public class FileUploadController {
         this.fileArchivingService = fileArchivingService;
     }
 
-
     @PostMapping(value = "/upload", produces = "application/zip")
     public ResponseEntity<StreamingResponseBody> handleFileUpload(
-            @RequestParam("files") ArrayList<MultipartFile> files,
+            @RequestParam("files") ArrayList<MultipartFile> files, HttpServletRequest request,
             HttpServletResponse response) throws IOException {
-
-        return fileArchivingService.archiveToZipFormat(files, response);
-
-    }
-
-    @GetMapping(value = "/upload", produces = "application/zip")
-    public String handleFileUpload() throws IOException {
-        return "Hello, World!";
+        return fileArchivingService.archiveToZipFormat(files, request, response);
     }
 }
