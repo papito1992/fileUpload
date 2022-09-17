@@ -1,9 +1,12 @@
 package com.dokobit.fileupload.services;
 
+import com.dokobit.fileupload.interceptors.LoggerInterceptor;
 import com.dokobit.fileupload.interfaces.FileArchivingService;
 import com.dokobit.fileupload.models.FileUploadStatistics;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
@@ -15,6 +18,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -24,8 +28,12 @@ import static com.dokobit.fileupload.utils.IpAddressUtils.getRemoteAddr;
 @Service
 public class FileArchivingServiceImpl implements FileArchivingService {
 
-    @Autowired
-    private FileUploadStatisticsServiceImpl fileUploadStatisticsService;
+    private static final Logger log = LoggerFactory.getLogger(LoggerInterceptor.class);
+    private final FileUploadStatisticsServiceImpl fileUploadStatisticsService;
+
+    public FileArchivingServiceImpl(FileUploadStatisticsServiceImpl fileUploadStatisticsService) {
+        this.fileUploadStatisticsService = fileUploadStatisticsService;
+    }
 
     @Override
     public ResponseEntity<StreamingResponseBody> archiveToZipFormat(
@@ -46,14 +54,39 @@ public class FileArchivingServiceImpl implements FileArchivingService {
         return ResponseEntity.ok(streamResponseBody);
     }
 
-    private static void setResponseHeaders(HttpServletResponse response, String fileName) {
+    @Override
+    @Async
+    public CompletableFuture<ResponseEntity<StreamingResponseBody>> asyncArchiveToZipFormat(
+            ArrayList<MultipartFile> files,
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) throws IOException {
+
+        ZipOutputStream zipOut = new ZipOutputStream(response.getOutputStream());
+        String fileName = getFileName(files);
+
+        StreamingResponseBody streamResponseBody = getStreamingResponseBody(files, response, zipOut);
+
+        upsertUsageStatisticsForIp(request);
+
+        setResponseHeaders(response, fileName);
+
+        return CompletableFuture.completedFuture(ResponseEntity.ok(streamResponseBody));
+    }
+
+    @Async()
+    public void setResponseHeaders(HttpServletResponse response, String fileName) {
+        log.info("Started Setting response headers");
         response.setContentType("application/zip");
         response.setHeader("Content-Disposition", "attachment; filename=" + fileName + ".zip");
         response.addHeader("Pragma", "no-cache");
         response.addHeader("Expires", "0");
+        log.info("Finished Setting response headers");
     }
 
-    private static StreamingResponseBody getStreamingResponseBody(ArrayList<MultipartFile> files, HttpServletResponse response, ZipOutputStream zipOut) {
+    @Async()
+    public StreamingResponseBody getStreamingResponseBody(ArrayList<MultipartFile> files, HttpServletResponse response, ZipOutputStream zipOut) {
+        log.info("Started archiving files");
         return outputStream -> {
             ZipEntry zipEntry = null;
             InputStream inputStream;
@@ -70,19 +103,23 @@ public class FileArchivingServiceImpl implements FileArchivingService {
             }
             zipOut.close();
             response.setContentLength((int) (zipEntry != null ? zipEntry.getSize() : 0));
+            log.info("Finished archiving files");
         };
     }
 
-    private void upsertUsageStatisticsForIp(HttpServletRequest request) {
+    @Async
+    public void upsertUsageStatisticsForIp(HttpServletRequest request) {
+        log.info("Started Updating usage statistics");
         Optional<FileUploadStatistics> fileUploadStatistics = fileUploadStatisticsService.findByIpAddress(getRemoteAddr(request));
         if (fileUploadStatistics.isPresent()) {
             fileUploadStatisticsService.update(fileUploadStatistics.get());
         } else {
             fileUploadStatisticsService.save(new FileUploadStatistics(getRemoteAddr(request)));
         }
+        log.info("Finished Updating usage statistics");
     }
 
-    private static String getFileName(ArrayList<MultipartFile> files) {
+    public String getFileName(ArrayList<MultipartFile> files) {
         return files.stream()
                 .map(multipartFile -> multipartFile.getOriginalFilename().replaceAll(" ", "")
                         .replaceAll("\\..*$", ""))
